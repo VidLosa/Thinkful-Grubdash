@@ -1,5 +1,4 @@
 const path = require("path");
-const { notDeepStrictEqual } = require("assert");
 
 // Use the existing dishes data
 const dishes = require(path.resolve("src/data/dishes-data"));
@@ -40,25 +39,44 @@ function create(req, res) {
 
 //BODY VALIDATION
 function dishExists(req, res, next) {
-  const dishId = req.params.dishId;
-  const foundDish = dishes.filter((dish) => dish.id === dishId);
-  if (foundDish.length > 0) {
+  const { dishId } = req.params;
+  const foundDish = dishes.find((dish) => dish.id === dishId);
+  if (foundDish) {
     res.locals.dish = foundDish;
-    next();
-  } else {
-    next({
-      status: 404,
-      message: `Dish ${dishId} not found.`
+    return next();
+  }
+  next({
+    status: 404,
+    message: `Dish does not exist ${dishId}`,
+  });
+}
+
+function checkIdMatch(req, res, next) {
+  const { dishId } = req.params;
+  const { data: { id } = {} } = req.body;
+
+  if (id && id !== dishId) {
+    return next({
+      status: 400,
+      message: `Dish id does not match route id. Dish: ${id}, Route: ${dishId}`,
     });
   }
+  next();
+}
+
+function bodyDataHas(propertyName) {
+  return function (req, res, next) {
+    const { data = {} } = req.body;
+    if (data[propertyName]) {
+      return next();
+    }
+    next({ status: 400, message: `Dish must include a ${propertyName}` });
+  };
 }
 
 //READ
 function read(req, res, next) {
-  const foundDish = res.locals.dish;
-  if (foundDish) {
-    res.json({ data: foundDish[0] });
-  }
+  res.json({ data: res.locals.dish });
 }
 
 //__________DISHS DATA VALIDATION START___________
@@ -147,19 +165,16 @@ function isIdValid(req, res, next) {
 
 //UPDATE
 function update(req, res) {
-  const dishId = req.params.dishId;
-   let {
-     data: { name, description, price, image_url },
-   } = req.body;
-   let updatedDish = {
-     id: dishId,
-     name: req.body.data.name,
-     description: req.body.data.description,
-     price: req.body.data.price,
-     image_url: req.body.data.image_url,
-   };
-   return res.json({ data: updatedDish });
- }
+  const dish = res.locals.dish;
+  const { data: { name, description, price, image_url } = {} } = req.body;
+
+  dish.name = name;
+  dish.description = description;
+  dish.price = price;
+  dish.image_url = image_url;
+
+  res.json({ data: dish });
+}
 
 
 
@@ -178,7 +193,11 @@ module.exports = {
 
   update: [
     dishExists,
-    isNameValid,
+    checkIdMatch,
+    bodyDataHas("name"),
+    bodyDataHas("description"),
+    bodyDataHas("price"),
+    bodyDataHas("image_url"),
     isDescriptionValid,
     isPriceValid,
     isUrlValid,
